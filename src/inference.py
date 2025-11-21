@@ -108,6 +108,9 @@ class ModelTester:
         print("Starting interactive mode. Type 'exit' to quit.")
         print("Tip: Start by asking 'Who is Jiggy Kakkad and what are his details?' to load the context.")
         
+        if not self.model:
+            self.load_model()
+
         history = []
         
         while True:
@@ -137,14 +140,23 @@ class ModelTester:
             # Decode only the new part
             generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=False)
             
+            # DEBUG: Print raw output to see what's happening
+            # print(f"DEBUG RAW: {generated_text}")
+            
             # Extract the last assistant response
-            # The format is <|user|>...<|assistant|>RESPONSE<|end|>
-            # We want the last RESPONSE
             try:
-                # Split by assistant tag and take the last part, then strip <|end|>
-                response = generated_text.split("<|assistant|>")[-1].split("<|end|>")[0].strip()
-            except IndexError:
-                response = generated_text # Fallback
+                # Split by assistant tag and take the last part
+                parts = generated_text.split("<|assistant|>")
+                if len(parts) > 1:
+                    response = parts[-1]
+                    # Remove <|end|> if present
+                    response = response.split("<|end|>")[0].strip()
+                else:
+                    # Fallback: try to remove the prompt manually if tags aren't found
+                    response = generated_text.replace(full_prompt, "").strip()
+            except Exception as e:
+                response = generated_text # Fallback to everything
+
             
             print(f"Phi3: {response}")
             
