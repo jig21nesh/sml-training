@@ -1,0 +1,8 @@
+transformers
+peft
+bitsandbytes; sys_platform != 'darwin'
+accelerate
+pypdf
+datasets
+torch
+scipy
