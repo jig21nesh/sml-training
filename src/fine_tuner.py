@@ -82,10 +82,10 @@ class Phi3FineTuner:
             # For this script, we'll try standard 4-bit load, but catch errors for MPS fallback if needed.
             
             if self.device_map == "mps":
-                logger.warning("MPS detected. BitsAndBytes 4-bit might not be fully supported. Loading in float32 for stability.")
+                logger.warning("MPS detected. Using bfloat16 for M-series performance.")
                 self.model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
-                    torch_dtype=torch.float32,
+                    torch_dtype=torch.bfloat16,
                     device_map=self.device_map,
                     trust_remote_code=True,
                     attn_implementation="eager"

@@ -50,7 +50,7 @@ class ModelTester:
             
             base_model = AutoModelForCausalLM.from_pretrained(
                 self.base_model_name,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                torch_dtype=torch.bfloat16 if (self.device == "cuda" or self.device == "mps") else torch.float32,
                 device_map=self.device,
                 trust_remote_code=True,
                 attn_implementation="eager"
