@@ -72,26 +72,99 @@ class PDFDataProcessor:
         """
         processed_data = []
         
-        processed_data = []
-        
         for item in self.data:
             text = item["text"]
             source = item["source"]
             
-            # For resumes/small docs, we want the WHOLE text in one go if possible.
-            # Phi-3 has 4k context. A 2-page resume fits easily.
-            # We'll just take the first 3500 characters to be safe and avoid cutting off.
+            # --- Strategy: Heuristic Section Splitting ---
+            # We will try to identify common resume sections and create specific QA pairs for them.
+            # This allows the model to answer "What is his education?" directly.
             
-            full_text = text[:3500] 
-            
-            formatted_text = f"<|user|>\nWho is Jiggy Kakkad and what are his details?\n<|end|>\n<|assistant|>\n{full_text}\n<|end|>"
-            
+            # 1. Full Resume (The "Master" Context)
+            # We still keep this so it can answer "Tell me everything" or "Who is he?"
+            full_text = text[:3500]
             processed_data.append({
-                "text": formatted_text,
+                "text": f"<|user|>\nWho is Jiggy Kakkad and what is his full profile?\n<|end|>\n<|assistant|>\n{full_text}\n<|end|>",
                 "source": source
             })
-        
-        logger.info(f"Created {len(processed_data)} training samples (one per document)")
+            
+            # 2. Contact Details (Usually at the start)
+            # Heuristic: Take the first 300 characters or until the first section header
+            headers = ["SUMMARY", "CORE SKILLS", "EXPERIENCE", "EDUCATION", "SKILLS"]
+            first_header_idx = len(text)
+            for header in headers:
+                idx = text.find(header)
+                if idx != -1 and idx < first_header_idx:
+                    first_header_idx = idx
+            
+            contact_info = text[:first_header_idx].strip()
+            if contact_info:
+                processed_data.append({
+                    "text": f"<|user|>\nWhat are Jiggy Kakkad's contact details and location?\n<|end|>\n<|assistant|>\n{contact_info}\n<|end|>",
+                    "source": source
+                })
+                # Add a specific one for "number" or "email" if they exist in the text
+                if "04" in contact_info: # Simple check for Aus mobile
+                     processed_data.append({
+                        "text": f"<|user|>\nWhat is Jiggy Kakkad's phone number?\n<|end|>\n<|assistant|>\n{contact_info}\n<|end|>",
+                        "source": source
+                    })
+
+            # 3. Section Extraction
+            # We split the text by known headers
+            lower_text = text.lower()
+            
+            sections_map = {
+                "education": ["education", "academic background"],
+                "experience": ["experience", "employment history", "work history"],
+                "skills": ["skills", "core skills", "technologies", "technical skills"],
+                "summary": ["summary", "profile", "objective"]
+            }
+            
+            for section_name, keywords in sections_map.items():
+                start_idx = -1
+                used_keyword = ""
+                
+                # Find the start of the section
+                for kw in keywords:
+                    idx = lower_text.find(kw)
+                    if idx != -1:
+                        start_idx = idx
+                        used_keyword = kw
+                        break
+                
+                if start_idx != -1:
+                    # Find the end of this section (start of the next section)
+                    end_idx = len(text)
+                    
+                    # Search for the nearest NEXT header
+                    for other_section, other_keywords in sections_map.items():
+                        if other_section == section_name: continue
+                        
+                        for other_kw in other_keywords:
+                            other_idx = lower_text.find(other_kw, start_idx + len(used_keyword))
+                            if other_idx != -1 and other_idx < end_idx:
+                                end_idx = other_idx
+                    
+                    # Extract content
+                    # We include the header in the content so the model sees "EDUCATION..."
+                    section_content = text[start_idx:end_idx].strip()
+                    
+                    if len(section_content) > 20: # Ignore empty/tiny sections
+                        # Generate QA Pair
+                        question = f"What is Jiggy Kakkad's {section_name}?"
+                        processed_data.append({
+                            "text": f"<|user|>\n{question}\n<|end|>\n<|assistant|>\n{section_content}\n<|end|>",
+                            "source": source
+                        })
+                        
+                        # Add a variation
+                        processed_data.append({
+                            "text": f"<|user|>\nTell me about his {section_name}.\n<|end|>\n<|assistant|>\n{section_content}\n<|end|>",
+                            "source": source
+                        })
+
+        logger.info(f"Created {len(processed_data)} targeted training samples from {len(self.data)} documents")
         return processed_data
 
     def prepare_dataset(self, output_filename: str = "train.jsonl") -> None:
